@@ -1,0 +1,60 @@
+import requests
+from bs4 import BeautifulSoup
+import time
+import threading
+from flask import Flask
+
+PRODUCT_URLS = [
+    # (Paste all your AliExpress product links here)
+]
+
+TELEGRAM_BOT_TOKEN = "7685279288:AAHcWFkTf2XbeQnf97mlfY-Aj0XedEOtvvw"
+TELEGRAM_USER_ID = "6776728471"
+CHECK_INTERVAL = 60  # seconds
+
+notified_products = set()
+
+def is_in_stock(html):
+    soup = BeautifulSoup(html, 'html.parser')
+    text = soup.get_text().lower()
+    return not any(p in text for p in [
+        "no longer available", "sold out", "currently unavailable"
+    ])
+
+def send_telegram_message(message):
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    data = {"chat_id": TELEGRAM_USER_ID, "text": message}
+    try:
+        r = requests.post(url, data=data)
+        print("Telegram sent" if r.status_code == 200 else f"Error: {r.text}")
+    except Exception as e:
+        print("Telegram error:", e)
+
+def check_all_products():
+    for url in PRODUCT_URLS:
+        print("Checking:", url)
+        try:
+            res = requests.get(url, headers={"User-Agent":"Mozilla/5.0"}, timeout=10)
+            if res.status_code == 200 and is_in_stock(res.text):
+                if url not in notified_products:
+                    send_telegram_message("✅ IN STOCK: " + url)
+                    notified_products.add(url)
+            else:
+                print("Not in stock:", url)
+        except Exception as e:
+            print("Error checking", url, e)
+
+app = Flask(__name__)
+@app.route('/')
+def home(): return "✅ Bot running!"
+
+def run_flask(): app.run(host="0.0.0.0", port=8080)
+
+def run_bot():
+    while True:
+        check_all_products()
+        time.sleep(CHECK_INTERVAL)
+
+if __name__ == "__main__":
+    threading.Thread(target=run_flask).start()
+    run_bot()
